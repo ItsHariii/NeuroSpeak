@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Brain outline -->
+  <path 
+    d="M102.4,256 C102.4,153.6 179.2,76.8 256,76.8 C332.8,76.8 409.6,153.6 409.6,256 C409.6,358.4 332.8,435.2 256,435.2 C179.2,435.2 102.4,358.4 102.4,256 Z" 
+    stroke="#001F5C" 
+    stroke-width="32" 
+    fill="#4DABF7" 
+  />
+  
+  <!-- Brain neural connections -->
+  <path 
+    d="M179.2,204.8 C204.8,179.2 230.4,230.4 256,204.8 C281.6,179.2 307.2,230.4 332.8,204.8 M153.6,256 C204.8,230.4 230.4,281.6 281.6,256 C332.8,230.4 358.4,281.6 358.4,256 M179.2,307.2 C230.4,281.6 256,332.8 307.2,307.2 C358.4,281.6 332.8,332.8 332.8,307.2" 
+    stroke="#001F5C" 
+    stroke-width="16" 
+    stroke-linecap="round" 
+    fill="none" 
+  />
+  
+  <!-- Brain neural nodes -->
+  <circle cx="179.2" cy="204.8" r="10" fill="#001F5C" />
+  <circle cx="332.8" cy="204.8" r="10" fill="#001F5C" />
+  <circle cx="256" cy="256" r="10" fill="#001F5C" />
+  <circle cx="179.2" cy="307.2" r="10" fill="#001F5C" />
+  <circle cx="332.8" cy="307.2" r="10" fill="#001F5C" />
+  
+  <!-- Brain speech bubble shape -->
+  <path 
+    d="M256,435.2 L307.2,435.2 L358.4,486.4" 
+    stroke="#001F5C" 
+    stroke-width="32" 
+    fill="#4DABF7" 
+    stroke-linejoin="round" 
+    stroke-linecap="round" 
+  />
+  
+  <!-- Arc above brain -->
+  <path 
+    d="M76.8,204.8 C128,102.4 204.8,51.2 256,51.2" 
+    stroke="#4DABF7" 
+    stroke-width="24" 
+    fill="none" 
+    stroke-linecap="round" 
+  />
+</svg>

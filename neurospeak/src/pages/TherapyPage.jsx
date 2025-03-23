@@ -2,9 +2,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
+import { useSpeechContext } from '../context/SpeechContext';
 import useSpeech from '../hooks/useSpeech';
 import { useAccessibility } from '../context/AccessibilityContext';
 import { useAuth } from '../context/AuthContext';
+import SpeechTherapy from '../components/SpeechTherapy';
+import BreathingCircle from '../components/BreathingCircle';
 
 // Exercise categories
 const exerciseCategories = [
@@ -136,20 +139,20 @@ const exercises = [
   {
     id: 6,
     title: 'Controlled Breathing',
-    description: 'Improve speech fluency through breathing exercises',
+    description: 'Improve speech fluency through 4-7-8 breathing technique',
     difficulty: 'Easy',
     level: 1,
     category: 'fluency',
     icon: '💨',
     points: 10,
+    breathingMethod: '4-7-8',
     steps: [
-      { instruction: 'Breathe in slowly through your nose', duration: 4 },
-      { instruction: 'Hold your breath', duration: 2 },
-      { instruction: 'Exhale slowly through your mouth', duration: 6 },
-      { instruction: 'Breathe in while raising your arms', duration: 4 },
-      { instruction: 'Exhale while lowering your arms', duration: 6 }
+      { instruction: 'Breathe in through your nose', duration: 4, phase: 'inhale' },
+      { instruction: 'Hold your breath', duration: 7, phase: 'hold' },
+      { instruction: 'Exhale slowly through your mouth', duration: 8, phase: 'exhale' },
+      { instruction: 'Repeat the breathing cycle', duration: 0, phase: 'rest' }
     ],
-    instructions: 'Follow each breathing instruction for the specified duration in seconds'
+    instructions: 'Follow the 4-7-8 breathing technique: inhale for 4 seconds, hold for 7 seconds, exhale for 8 seconds'
   },
   {
     id: 7,
@@ -406,7 +409,7 @@ const ExerciseCard = ({ exercise, onSelect, completed }) => {
                 {completed && (
                   <div className="flex items-center bg-green-100 rounded-full px-2 py-0.5">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-green-600 mr-1">
-                      <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm13.36-1.814a.75.75 0 10-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.14-.094l3.75-5.25z" clipRule="evenodd" />
+                      <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm13.36-1.814a.75.75 0 010-1.22l-3.236 4.53L9.53 12.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.14-.094l3.75-5.25z" clipRule="evenodd" />
                     </svg>
                     <span className="text-xs font-medium text-green-700">Completed</span>
                   </div>
@@ -464,8 +467,11 @@ const ExerciseDetail = ({ exercise, onBack, onComplete }) => {
   const [attempts, setAttempts] = useState(0);
   const [isCorrect, setIsCorrect] = useState(false);
   const [showHint, setShowHint] = useState(false);
-  const { speak, startListening, stopListening, isListening, speechRecognitionAvailable } = useSpeech();
+  const { speak, startListening, stopListening, isListening, speechRecognitionAvailable } = useSpeechContext();
   const { getTextSizeClass } = useAccessibility();
+  
+  // Component ID for SpeechContext
+  const COMPONENT_ID = 'therapy-page';
   
   const getCurrentTarget = () => {
     if (exercise.words && exercise.words[currentStep]) {
@@ -521,49 +527,98 @@ const ExerciseDetail = ({ exercise, onBack, onComplete }) => {
     } else {
       setRecordedText('');
       setFeedback(null);
-      startListening({
-        onResult: (event) => {
-          const transcript = Array.from(event.results)
-            .map(result => result[0].transcript)
-            .join('');
-          setRecordedText(transcript);
-          
-          // Check if the last result is final
-          if (event.results[event.results.length - 1].isFinal) {
-            evaluateSpeech(transcript);
+      try {
+        startListening({
+          onResult: (event) => {
+            const transcript = Array.from(event.results)
+              .map(result => result[0].transcript)
+              .join('');
+            
+            // Only update the UI if we have meaningful text
+            if (transcript && transcript.trim().length > 0) {
+              setRecordedText(transcript);
+            }
+            
+            // Check if the last result is final
+            if (event.results[event.results.length - 1].isFinal) {
+              // Validate transcript before evaluation
+              const finalTranscript = transcript.trim();
+              if (finalTranscript.length > 0) {
+                evaluateSpeech(finalTranscript);
+              } else {
+                // Handle empty transcript
+                setFeedback({
+                  type: 'error',
+                  message: 'No speech detected. Please try again and speak clearly.',
+                  score: 0
+                });
+                setIsCorrect(false);
+              }
+            }
+          },
+          onError: (event, errorMessage) => {
+            console.error('Speech recognition error in TherapyPage:', event);
+            setIsRecording(false);
+            setFeedback({
+              type: 'error',
+              message: errorMessage || 'Error during speech recognition. Please try again.',
+              score: 0
+            });
+          },
+          // Add a timeout to automatically stop if no speech is detected
+          timeout: 10000, // 10 seconds
+          onTimeout: () => {
+            console.log('Speech recognition timed out - no speech detected');
+            setFeedback({
+              type: 'error',
+              message: 'No speech detected within time limit. Please try again.',
+              score: 0
+            });
+            setIsCorrect(false);
           }
-        }
-      });
-      setIsRecording(true);
+        });
+        setIsRecording(true);
+      } catch (error) {
+        console.error('Error starting speech recognition:', error);
+        setIsRecording(false);
+        setFeedback({
+          type: 'error',
+          message: 'Could not start recording. Please try again.',
+          score: 0
+        });
+      }
     }
   };
   
   const evaluateSpeech = (transcript) => {
     const target = getCurrentTarget().toLowerCase();
-    const spoken = transcript.toLowerCase();
+    const spoken = transcript.toLowerCase().trim();
+    
+    console.log(`Comparing: "${target}" with "${spoken}"`);
     
     // Simple string similarity check (can be enhanced with more sophisticated algorithms)
     const similarity = calculateSimilarity(target, spoken);
+    console.log(`Similarity score: ${similarity}`);
     
     if (similarity > 0.7) {
       setFeedback({
         type: 'success',
         message: 'Great job! Your pronunciation was excellent.',
-        score: 100
+        score: Math.round(similarity * 100)
       });
       setIsCorrect(true);
     } else if (similarity > 0.5) {
       setFeedback({
         type: 'partial',
         message: 'Good attempt! Try again for better pronunciation.',
-        score: 70
+        score: Math.round(similarity * 100)
       });
       setIsCorrect(false);
     } else {
       setFeedback({
         type: 'error',
         message: 'Try again. Listen to the example and repeat clearly.',
-        score: 30
+        score: Math.max(10, Math.round(similarity * 100))
       });
       setIsCorrect(false);
     }
@@ -697,22 +752,75 @@ const ExerciseDetail = ({ exercise, onBack, onComplete }) => {
               {exercise.phrases[currentStep]}
             </motion.h3>
           </motion.div>
-          <div className="flex items-center justify-center mb-4">
-            <div className="bg-white border border-purple-100 px-4 py-2 rounded-lg text-purple-700 flex items-center">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 mr-2">
-                <path d="M8.25 4.5a3.75 3.75 0 117.5 0v8.25a3.75 3.75 0 11-7.5 0V4.5z" />
-                <path d="M6 10.5a.75.75 0 01.75.75v1.5a5.25 5.25 0 1010.5 0v-1.5a.75.75 0 011.5 0v1.5a6.751 6.751 0 01-6 6.709v2.291h3a.75.75 0 010 1.5h-7.5a.75.75 0 010-1.5h3v-2.291a6.751 6.751 0 01-6-6.709v-1.5A.75.75 0 016 10.5z" />
-              </svg>
-              <span className="font-medium">
-                {exercise.instructions || 'Practice saying this phrase with a steady rhythm'}
-              </span>
-            </div>
-          </div>
+          <p className="text-gray-600 mb-4 text-center">
+            {exercise.instructions || 'Practice saying this phrase smoothly and at a comfortable pace'}
+          </p>
         </motion.div>
       );
     }
     // Fluency exercises with steps
     else if (exercise.steps) {
+      // Special handling for 4-7-8 breathing method
+      if (exercise.breathingMethod === '4-7-8') {
+        const [breathingStarted, setBreathingStarted] = useState(false);
+        
+        return (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="py-8"
+          >
+            <div className="bg-gradient-to-br from-green-50 to-teal-50 rounded-2xl p-8 mb-6 shadow-sm border border-green-100">
+              {breathingStarted ? (
+                <BreathingCircle 
+                  phase={exercise.steps[currentStep].phase}
+                  duration={exercise.steps[currentStep].duration}
+                  onComplete={() => {
+                    // Move to next step or cycle back to first step if at the end
+                    if (currentStep === exercise.steps.length - 1) {
+                      setCurrentStep(0);
+                    } else {
+                      setCurrentStep(currentStep + 1);
+                    }
+                  }}
+                />
+              ) : (
+                <motion.div className="flex flex-col items-center justify-center py-12">
+                  <motion.div 
+                    className="w-40 h-40 rounded-full flex items-center justify-center shadow-lg mb-6"
+                    style={{ backgroundColor: '#4ade80' }}
+                    animate={{ 
+                      scale: [1, 1.05, 1],
+                    }}
+                    transition={{ 
+                      repeat: Infinity, 
+                      duration: 2 
+                    }}
+                  >
+                    <span className="text-xl font-bold text-white">4-7-8</span>
+                  </motion.div>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="py-3 px-8 bg-green-600 text-white rounded-xl shadow-md flex items-center justify-center font-medium"
+                    onClick={() => setBreathingStarted(true)}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 mr-2">
+                      <path fillRule="evenodd" d="M4.5 5.653c0-1.426 1.529-2.33 2.779-1.643l11.54 6.348c1.295.712 1.295 2.573 0 3.285L7.28 19.991c-1.25.687-2.779-.217-2.779-1.643V5.653z" />
+                    </svg>
+                    Start Breathing Exercise
+                  </motion.button>
+                </motion.div>
+              )}
+            </div>
+            <p className="text-gray-600 mb-4 text-center">
+              {exercise.instructions || 'Follow the breathing circle for guided breathing'}
+            </p>
+          </motion.div>
+        );
+      }
+      
+      // Regular steps rendering for other step-based exercises
       return (
         <motion.div 
           initial={{ opacity: 0 }}
@@ -733,7 +841,7 @@ const ExerciseDetail = ({ exercise, onBack, onComplete }) => {
             </motion.h3>
             <div className="bg-white px-4 py-2 rounded-lg text-teal-700 inline-flex items-center">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 mr-2">
-                <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 6a.75.75 0 00-1.5 0v6c0 .414.336.75.75.75h4.5a.75.75 0 000-1.5h-3.75V6z" />
+                <path d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 6a.75.75 0 011.06 0c3.808 3.807 3.808 9.98 0 13.788a.75.75 0 11-1.06-1.06 8.25 8.25 0 000-11.668.75.75 0 010-1.06z" />
               </svg>
               <span className="font-medium">
                 Duration: {exercise.steps[currentStep].duration} seconds
@@ -755,18 +863,6 @@ const ExerciseDetail = ({ exercise, onBack, onComplete }) => {
           className="py-8"
         >
           <div className="bg-gradient-to-br from-green-50 to-teal-50 rounded-2xl p-8 mb-6 shadow-sm border border-green-100">
-            <motion.div
-              initial={{ y: -5, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: 0.1 }}
-              className="flex items-center justify-center mb-4"
-            >
-              <div className="bg-white p-3 rounded-full shadow-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8 text-green-600">
-                  <path d="M21.731 2.269a2.625 2.625 0 00-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 000-3.712zM19.513 8.199l-3.712-3.712-12.15 12.15a5.25 5.25 0 00-1.32 2.214l-.8 2.685a.75.75 0 00.933.933l2.685-.8a5.25 5.25 0 002.214-1.32L19.513 8.2z" />
-                </svg>
-              </div>
-            </motion.div>
             <h3 className={`text-xl font-bold mb-2 text-center ${getTextSizeClass()}`}>
               {exercise.prompts[currentStep]}
             </h3>
@@ -975,7 +1071,7 @@ const ExerciseDetail = ({ exercise, onBack, onComplete }) => {
             <div className="flex items-center justify-center mb-6">
               <div className="bg-white p-3 rounded-full shadow-sm">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8 text-amber-600">
-                  <path d="M8.25 4.5a3.75 3.75 0 117.5 0v8.25a3.75 3.75 0 11-7.5 0V4.5z" />
+                  <path d="M8.25 4.5a3 3 0 013-3h9a3 3 0 013 3v9a3 3 0 01-3 3h-9a3 3 0 01-3-3v-9z" />
                   <path d="M6 10.5a.75.75 0 01.75.75v1.5a5.25 5.25 0 1010.5 0v-1.5a.75.75 0 011.5 0v1.5a6.751 6.751 0 01-6 6.709v2.291h3a.75.75 0 010 1.5h-7.5a.75.75 0 010-1.5h3v-2.291a6.751 6.751 0 01-6-6.709v-1.5A.75.75 0 016 10.5z" />
                 </svg>
               </div>
@@ -1028,9 +1124,9 @@ const ExerciseDetail = ({ exercise, onBack, onComplete }) => {
             </motion.span>
           </motion.div>
           <div className="bg-white border border-blue-100 px-4 py-2 rounded-lg text-blue-700 inline-flex items-center">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 mr-2">
-              <path d="M8.25 4.5a3.75 3.75 0 117.5 0v8.25a3.75 3.75 0 11-7.5 0V4.5z" />
-              <path d="M6 10.5a.75.75 0 01.75.75v1.5a5.25 5.25 0 1010.5 0v-1.5a.75.75 0 011.5 0v1.5a6.751 6.751 0 01-6 6.709v2.291h3a.75.75 0 010 1.5h-7.5a.75.75 0 010-1.5h3v-2.291a6.751 6.751 0 01-6-6.709v-1.5A.75.75 0 016 10.5z" />
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2">
+              <path d="M12 .75a8.25 8.25 0 00-4.135 15.39c.686.398 1.115 1.008 1.134 1.623a.75.75 0 00.577.706c.352.083.71.148 1.074.195.323.041.6-.218.6-.544v-4.661a6.75 6.75 0 010-11.668.75.75 0 010-1.06z" />
+              <path fillRule="evenodd" d="M9.75 15.75a.75.75 0 010-1.06l-1.72-1.72a.75.75 0 00-1.06.94l-.94 1.72a.75.75 0 101.06 1.06L9.75 15.75z" clipRule="evenodd" />
             </svg>
             <span className="font-medium">Name this object out loud</span>
           </div>
@@ -1088,9 +1184,9 @@ const ExerciseDetail = ({ exercise, onBack, onComplete }) => {
             </p>
           </motion.div>
           <div className="bg-white border border-blue-100 px-4 py-2 rounded-lg text-blue-700 flex items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 mr-2">
-              <path d="M8.25 4.5a3.75 3.75 0 117.5 0v8.25a3.75 3.75 0 11-7.5 0V4.5z" />
-              <path d="M6 10.5a.75.75 0 01.75.75v1.5a5.25 5.25 0 1010.5 0v-1.5a.75.75 0 011.5 0v1.5a6.751 6.751 0 01-6 6.709v2.291h3a.75.75 0 010 1.5h-7.5a.75.75 0 010-1.5h3v-2.291a6.751 6.751 0 01-6-6.709v-1.5A.75.75 0 016 10.5z" />
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2">
+              <path d="M12 .75a8.25 8.25 0 00-4.135 15.39c.686.398 1.115 1.008 1.134 1.623a.75.75 0 00.577.706c.352.083.71.148 1.074.195.323.041.6-.218.6-.544v-4.661a6.75 6.75 0 010-11.668.75.75 0 010-1.06z" />
+              <path fillRule="evenodd" d="M9.75 15.75a.75.75 0 010-1.06l-1.72-1.72a.75.75 0 00-1.06.94l-.94 1.72a.75.75 0 101.06 1.06L9.75 15.75z" clipRule="evenodd" />
             </svg>
             <span className="font-medium">Read this paragraph aloud and record yourself</span>
           </div>
@@ -1133,7 +1229,7 @@ const ExerciseDetail = ({ exercise, onBack, onComplete }) => {
             onClick={onBack}
           >
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-5 h-5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19l-7-7 7-7m0 0l-7 7m7 7v-13.5" />
             </svg>
           </motion.button>
           
@@ -1148,7 +1244,7 @@ const ExerciseDetail = ({ exercise, onBack, onComplete }) => {
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3 mr-1">
                   <path fillRule="evenodd" d="M10.788 3.21c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 001.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06zM18.584 5.106a.75.75 0 011.06 0c3.808 3.807 3.808 9.98 0 13.788a.75.75 0 11-1.06-1.06 8.25 8.25 0 000-11.668.75.75 0 010-1.06z" />
                 </svg>
-                Level {exercise.level}
+                <span className="text-xs">Level {exercise.level}</span>
               </span>
             </div>
           </div>
@@ -1162,16 +1258,17 @@ const ExerciseDetail = ({ exercise, onBack, onComplete }) => {
         </div>
         
         {/* Warnings and Feedback */}
-        <AnimatePresence>
+        <AnimatePresence mode="wait">
           {!speechRecognitionAvailable && (
             <motion.div 
+              key="speech-recognition-warning"
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
               className="bg-yellow-50 border border-yellow-200 text-yellow-700 p-4 rounded-xl mb-4 flex items-start"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 mr-2 text-yellow-500 flex-shrink-0">
-                <path fillRule="evenodd" d="M9.401 3.003c1.155-2 4.043-2 5.197 0l7.355 12.748c1.154 2-.29 4.5-2.599 4.5H4.645c-2.309 0-3.752-2.5-2.598-4.5L9.4 3.003zM12 8.25a.75.75 0 011.22-.872l3.236 4.53L9.53 12.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.14-.094l3.75-5.25z" clipRule="evenodd" />
+                <path fillRule="evenodd" d="M9.401 3.003c1.155-2 4.043-2 5.197 0l7.355 12.748c1.154 2-.29 4.5-2.599 4.5H4.645c-2.309 0-3.752-2.5-2.598-4.5L9.4 3.003zM2.625 12a1.125 1.125 0 112.25 0 1.125 1.125 0 01-2.25 0zm4.875 0a.75.75 0 01.75-.75h12a.75.75 0 010 1.5h-12a.75.75 0 01-.75-.75z" />
               </svg>
               <div>
                 <p className="font-medium">Speech recognition is not available in your browser.</p>
@@ -1179,9 +1276,12 @@ const ExerciseDetail = ({ exercise, onBack, onComplete }) => {
               </div>
             </motion.div>
           )}
-          
+        </AnimatePresence>
+        
+        <AnimatePresence mode="wait">
           {recordedText && (
             <motion.div 
+              key="recorded-text"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
@@ -1191,9 +1291,12 @@ const ExerciseDetail = ({ exercise, onBack, onComplete }) => {
               <p className="italic text-blue-600 bg-white p-3 rounded-lg border border-blue-100">"{recordedText}"</p>
             </motion.div>
           )}
-          
+        </AnimatePresence>
+        
+        <AnimatePresence mode="wait">
           {feedback && (
             <motion.div 
+              key="feedback"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ type: "spring", stiffness: 300, damping: 30 }}
@@ -1230,133 +1333,114 @@ const ExerciseDetail = ({ exercise, onBack, onComplete }) => {
         
         {/* Action Buttons */}
         <div className="flex gap-3 mb-6">
-          <motion.button 
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-            className="flex-1 py-3 px-4 bg-white border border-gray-200 rounded-xl shadow-sm flex items-center justify-center text-gray-700 font-medium"
-            onClick={handleListen}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 mr-2 text-primary">
-              <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 001.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06zM18.584 5.106a.75.75 0 011.06 0c3.808 3.807 3.808 9.98 0 13.788a.75.75 0 11-1.06-1.06 8.25 8.25 0 000-11.668.75.75 0 010-1.06z" />
-              <path d="M15.932 7.757a.75.75 0 011.061 0 6 6 0 010 8.486.75.75 0 01-1.06-1.061 4.5 4.5 0 000-6.364.75.75 0 010-1.06z" />
-            </svg>
-            Listen
-          </motion.button>
+          {exercise.id !== 6 && (
+            <motion.button 
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              className="flex-1 py-3 px-4 bg-white border border-gray-200 rounded-xl shadow-sm flex items-center justify-center text-gray-700 font-medium"
+              onClick={handleListen}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 mr-2 text-primary">
+                <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 001.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06zM18.584 5.106a.75.75 0 011.06 0c3.808 3.807 3.808 9.98 0 13.788a.75.75 0 11-1.06-1.06 8.25 8.25 0 000-11.668.75.75 0 010-1.06z" />
+              </svg>
+              Listen
+            </motion.button>
+          )}
           
-          <motion.button 
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-            className={`flex-1 py-3 px-4 rounded-xl shadow-md flex items-center justify-center font-medium ${
-              isRecording 
-                ? 'bg-gradient-to-r from-red-500 to-red-400 text-white' 
-                : 'bg-gradient-to-r from-primary to-blue-400 text-white shadow-md'
-            }`}
-            onClick={handleRecord}
-            disabled={!speechRecognitionAvailable}
-          >
-            {isRecording ? (
-              <>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 mr-2">
-                  <path fillRule="evenodd" d="M4.5 7.5a3 3 0 013-3h9a3 3 0 013 3v9a3 3 0 01-3 3h-9a3 3 0 01-3-3v-9z" clipRule="evenodd" />
-                </svg>
-                Stop Recording
-              </>
-            ) : (
-              <>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 mr-2">
-                  <path d="M8.25 4.5a3.75 3.75 0 117.5 0v8.25a3.75 3.75 0 11-7.5 0V4.5z" />
-                  <path d="M6 10.5a.75.75 0 01.75.75v1.5a5.25 5.25 0 1010.5 0v-1.5a.75.75 0 011.5 0v1.5a6.751 6.751 0 01-6 6.709v2.291h3a.75.75 0 010 1.5h-7.5a.75.75 0 010-1.5h3v-2.291a6.751 6.751 0 01-6-6.709v-1.5A.75.75 0 016 10.5z" />
-                </svg>
-                Start Recording
-              </>
-            )}
-          </motion.button>
+          {exercise.id !== 6 && (
+            <motion.button 
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              className={`flex-1 py-3 px-4 rounded-xl shadow-md flex items-center justify-center font-medium ${
+                isRecording 
+                  ? 'bg-red-600 text-white' 
+                  : 'bg-green-600 text-white shadow-md'
+              }`}
+              onClick={handleRecord}
+              disabled={!speechRecognitionAvailable}
+            >
+              {isRecording ? (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 mr-2">
+                    <path fillRule="evenodd" d="M4.5 7.5a3 3 0 013-3h9a3 3 0 013 3v9a3 3 0 01-3 3h-9a3 3 0 01-3-3v-9z" />
+                  </svg>
+                  Stop Recording
+                </>
+              ) : (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 mr-2">
+                    <path d="M8.25 4.5a3.75 3.75 0 117.5 0v8.25a3.75 3.75 0 11-7.5 0V4.5z" />
+                    <path d="M6 10.5a.75.75 0 01.75.75v1.5a5.25 5.25 0 1010.5 0v-1.5a.75.75 0 011.5 0v1.5a6.751 6.751 0 01-6 6.709v2.291h3a.75.75 0 010 1.5h-7.5a.75.75 0 010-1.5h3v-2.291a6.751 6.751 0 01-6-6.709v-1.5A.75.75 0 016 10.5z" />
+                  </svg>
+                  Start Recording
+                </>
+              )}
+            </motion.button>
+          )}
         </div>
         
         {/* Navigation and Progress */}
-        <div className="flex justify-between items-center">
-          <motion.button 
-            whileHover={{ x: -2 }}
-            whileTap={{ x: -4 }}
-            className={`flex items-center py-2 px-3 rounded-lg text-sm ${
-              currentStep === 0 
-                ? 'text-gray-400 cursor-not-allowed' 
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-            onClick={handlePrevious}
-            disabled={currentStep === 0}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 mr-1">
-              <path fillRule="evenodd" d="M7.72 12.53a.75.75 0 010-1.06l7.5-7.5a.75.75 0 111.06 1.06L9.31 12l6.97 6.97a.75.75 0 11-1.06 1.06l-7.5-7.5z" clipRule="evenodd" />
-            </svg>
-            Previous
-          </motion.button>
-          
-          <div className="flex flex-col items-center">
-            <span className="text-sm text-gray-600 font-medium mb-2">
-              Step {currentStep + 1} of {getStepCount()}
-            </span>
-            <div className="flex space-x-1.5">
-              {Array.from({ length: getStepCount() }, (_, i) => (
-                <motion.div 
-                  key={i} 
-                  initial={false}
-                  animate={i === currentStep ? { 
-                    width: 20,
-                    backgroundColor: '#3b82f6'
-                  } : {
-                    width: 8,
-                    backgroundColor: '#e5e7eb'
-                  }}
-                  transition={{ duration: 0.3 }}
-                  className="h-2 rounded-full"
-                />
-              ))}
+        {exercise.id !== 6 && (
+          <div className="flex justify-between items-center">
+            <motion.button 
+              whileHover={{ x: -2 }}
+              whileTap={{ x: -4 }}
+              className={`flex items-center py-2 px-3 rounded-lg text-sm ${
+                currentStep === 0 
+                  ? 'text-gray-400 cursor-not-allowed' 
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+              onClick={handlePrevious}
+              disabled={currentStep === 0}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 mr-1">
+                <path fillRule="evenodd" d="M7.72 12.53a.75.75 0 010-1.06l7.5-7.5a.75.75 0 011.06 1.06L9.31 12l6.97 6.97a.75.75 0 11-1.06 1.06l-7.5-7.5z" />
+              </svg>
+              Previous
+            </motion.button>
+            
+            <div className="flex flex-col items-center">
+              <span className="text-sm text-gray-600 font-medium mb-2">
+                Step {currentStep + 1} of {getStepCount()}
+              </span>
+              <div className="flex space-x-1.5">
+                {Array.from({ length: getStepCount() }, (_, i) => (
+                  <motion.div 
+                    key={i} 
+                    initial={false}
+                    animate={i === currentStep ? { 
+                      width: 20,
+                      backgroundColor: '#3b82f6'
+                    } : {
+                      width: 8,
+                      backgroundColor: '#e5e7eb'
+                    }}
+                    transition={{ duration: 0.3 }}
+                    className="h-2 rounded-full"
+                  />
+                ))}
+              </div>
             </div>
-          </div>
-          
-          <div className="flex">
-            {getCurrentHint() && (
-              <motion.button 
-                whileHover={{ y: -2 }}
-                whileTap={{ y: 0 }}
-                className={`flex items-center py-2 px-3 mr-2 rounded-lg text-sm ${
-                  showHint 
-                    ? 'bg-yellow-100 text-yellow-700' 
-                    : 'bg-white border border-yellow-200 text-yellow-600'
-                }`}
-                onClick={() => setShowHint(!showHint)}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 mr-1">
-                  <path fillRule="evenodd" d="M9 4.5a.75.75 0 01.75.75v1.5a5.25 5.25 0 1010.5 0v-1.5a.75.75 0 011.5 0v1.5a6.751 6.751 0 01-6 6.709v2.291h3a.75.75 0 010 1.5h-7.5a.75.75 0 010-1.5h3v-2.291a6.751 6.751 0 01-6-6.709v-1.5A.75.75 0 016 10.5z" />
-                  <path d="M6 10.5a.75.75 0 01.75.75v1.5a5.25 5.25 0 1010.5 0v-1.5a.75.75 0 011.5 0v1.5a6.751 6.751 0 01-6 6.709v2.291h3a.75.75 0 010 1.5h-7.5a.75.75 0 010-1.5h3v-2.291a6.751 6.751 0 01-6-6.709v-1.5A.75.75 0 016 10.5z" />
-                </svg>
-                {showHint ? 'Hide Hint' : 'Hint'}
-              </motion.button>
-            )}
             
             <motion.button 
               whileHover={{ x: 2 }}
               whileTap={{ x: 4 }}
-              className={`flex items-center py-2 px-4 rounded-lg text-sm font-medium ${
-                isCorrect || attempts >= 3 
-                  ? 'bg-gradient-to-r from-green-500 to-green-400 text-white shadow-md' 
-                  : 'bg-gradient-to-r from-primary to-blue-400 text-white shadow-md'
-              }`}
+              className="flex items-center py-2 px-3 rounded-lg text-sm text-gray-700 hover:bg-gray-100"
               onClick={handleNext}
             >
-              {currentStep === getStepCount() - 1 ? 'Complete' : 'Next'}
+              {currentStep < getStepCount() - 1 ? 'Next' : 'Complete'}
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 ml-1">
-                <path fillRule="evenodd" d="M16.28 11.47a.75.75 0 010 1.06l-7.5 7.5a.75.75 0 01-1.06-1.06L14.69 12 7.72 5.03a.75.75 0 011.06-1.06l7.5 7.5z" clipRule="evenodd" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.28 11.47a.75.75 0 010 1.06l-7.5 7.5a.75.75 0 01-1.06-1.06L14.69 12 7.72 5.03a.75.75 0 011.06-1.06l7.5 7.5z" />
               </svg>
             </motion.button>
           </div>
-        </div>
+        )}
         
         {/* Hint */}
-        <AnimatePresence>
+        <AnimatePresence mode="wait">
           {showHint && getCurrentHint() && (
             <motion.div 
+              key="hint"
               initial={{ opacity: 0, y: 10, height: 0 }}
               animate={{ opacity: 1, y: 0, height: 'auto' }}
               exit={{ opacity: 0, y: 10, height: 0 }}
@@ -1364,9 +1448,9 @@ const ExerciseDetail = ({ exercise, onBack, onComplete }) => {
               className="mt-6 bg-yellow-50 border border-yellow-200 p-4 rounded-xl"
             >
               <div className="flex items-start">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 mr-2 text-yellow-500 flex-shrink-0">
-                  <path d="M12 .75a8.25 8.25 0 00-4.135 15.39c.686.398 1.115 1.008 1.134 1.623a.75.75 0 00.577.706c.352.083.71.148 1.074.195.323.041.6-.218.6-.544v-4.661a6.75 6.75 0 1010.5 0v4.661c0 .326.277.585.6.544.364-.047.722-.112 1.074-.195a.75.75 0 00.577-.706c.02-.615.448-1.225 1.134-1.623A8.25 8.25 0 0012 .75z" />
-                  <path fillRule="evenodd" d="M9.75 15.75a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V16.5a.75.75 0 01.75-.75zm4.5 0a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V16.5a.75.75 0 01.75-.75z" clipRule="evenodd" />
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-yellow-500 flex-shrink-0">
+                  <path d="M12 .75a8.25 8.25 0 00-4.135 15.39c.686.398 1.115 1.008 1.134 1.623a.75.75 0 00.577.706c.352.083.71.148 1.074.195.323.041.6-.218.6-.544v-4.661a6.75 6.75 0 010-11.668.75.75 0 010-1.06z" />
+                  <path fillRule="evenodd" d="M9.75 15.75a.75.75 0 010-1.06l-1.72-1.72a.75.75 0 00-1.06.94l-.94 1.72a.75.75 0 101.06 1.06L9.75 15.75z" clipRule="evenodd" />
                 </svg>
                 <div>
                   <h4 className="font-medium text-yellow-800 mb-1">Hint</h4>
@@ -1514,7 +1598,7 @@ const TherapyPage = () => {
               <div className="mb-8">
                 <h2 className="text-lg font-semibold mb-4 flex items-center" style={{ color: 'var(--primary-dark)' }}>
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 mr-2" style={{ color: 'var(--primary)' }}>
-                    <path fillRule="evenodd" d="M2.625 6.75a1.125 1.125 0 112.25 0 1.125 1.125 0 01-2.25 0zm4.875 0A.75.75 0 018.25 6h12a.75.75 0 010 1.5h-12a.75.75 0 01-.75-.75zM2.625 12a1.125 1.125 0 112.25 0 1.125 1.125 0 01-2.25 0zm4.875 0a.75.75 0 01.75-.75h12a.75.75 0 010 1.5h-12a.75.75 0 01-.75-.75z" clipRule="evenodd" />
+                    <path fillRule="evenodd" d="M2.625 6.75a1.125 1.125 0 013-3h9a1.125 1.125 0 013 3v9a1.125 1.125 0 01-3 3h-9a1.125 1.125 0 01-3-3v-9z" />
                   </svg>
                   Categories
                 </h2>
@@ -1578,7 +1662,7 @@ const TherapyPage = () => {
                       onClick={() => setSelectedCategory(null)}
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7m0 0l-7 7m7 7v-13.5" />
                       </svg>
                       View All
                     </button>

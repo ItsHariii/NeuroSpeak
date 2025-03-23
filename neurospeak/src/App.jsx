@@ -12,8 +12,11 @@ import SettingsPage from './pages/SettingsPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import ProfilePage from './pages/ProfilePage';
+import ApiExample from './components/ApiExample';
+import SpeechTherapy from './components/SpeechTherapy';
 import { AccessibilityProvider } from './context/AccessibilityContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { SpeechProvider } from './context/SpeechContext';
 
 // Protected route component
 const ProtectedRoute = ({ children }) => {
@@ -119,6 +122,11 @@ function AppRoutes() {
             <TherapyPage />
           </ProtectedRoute>
         } />
+        <Route path="/therapy/exercises" element={
+          <ProtectedRoute>
+            <SpeechTherapy />
+          </ProtectedRoute>
+        } />
         <Route path="/progress" element={
           <ProtectedRoute>
             <ProgressPage />
@@ -134,6 +142,7 @@ function AppRoutes() {
             <ProfilePage />
           </ProtectedRoute>
         } />
+        <Route path="/api-test" element={<ApiExample />} />
       </Routes>
     </div>
   );
@@ -143,9 +152,11 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AccessibilityProvider>
-          <AppRoutes />
-        </AccessibilityProvider>
+        <SpeechProvider>
+          <AccessibilityProvider>
+            <AppRoutes />
+          </AccessibilityProvider>
+        </SpeechProvider>
       </AuthProvider>
     </BrowserRouter>
   );
